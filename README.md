@@ -1,184 +1,190 @@
 # Relation Extraction / Utterance Classification (PyTorch MLP)
 
-This project is a supervised NLP classification assignment: given a natural-language **utterance** about a movie (or actor), predict the correct **Freebase-style relation(s)** the utterance invokes (e.g., `movie.initial_release_date`). The dataset focuses on the **film schema** and is framed as **multi-label classification**, since some utterances can invoke multiple relations. :contentReference[oaicite:1]{index=1} :contentReference[oaicite:2]{index=2}
+This project implements a supervised NLP model to classify natural-language **utterances** into one or more **semantic relations** from a movie-focused schema. The task is framed as **multi-label classification**, since a single utterance may invoke multiple relations.
+
+This project was built as a learning exercise to understand text vectorization, multi-label learning, neural baselines, and systematic experimentation.
 
 ---
 
 ## Table of Contents
-- [Project Goal](#project-goal)
-- [Dataset](#dataset)
-- [Task Framing](#task-framing)
-- [Model](#model)
-- [Text Representation](#text-representation)
-- [Training Setup](#training-setup)
-- [Experiments](#experiments)
-- [Results Summary](#results-summary)
-- [Key Takeaways](#key-takeaways)
-- [Common Pitfalls / Notes to Future Me](#common-pitfalls--notes-to-future-me)
-- [How to Reproduce](#how-to-reproduce)
-- [Next Improvements](#next-improvements)
+- Project Goal
+- Dataset
+- Task Framing
+- Model
+- Text Representation
+- Training Setup
+- Experiments
+- Results Summary
+- Key Takeaways
+- Common Pitfalls / Notes to Future Me
+- How to Reproduce
+- Next Improvements
 
 ---
 
 ## Project Goal
-Train a deep learning model to predict the relation(s) invoked by an utterance. Example: an utterance asking about release date should map to `movies.initial_release_date`. :contentReference[oaicite:3]{index=3}
+Given a user utterance (e.g., a question about a movie), predict the correct relation(s) it refers to.  
+Examples include relations like:
+- movie release date
+- movie director
+- movie genre
+- actors or characters in a movie
+
+The core objective is to map free-form text to structured semantic relations.
 
 ---
 
 ## Dataset
-Two CSV files are used:
-- `hw1_train.csv`: contains **ID**, **UTTERANCES**, **CORE RELATIONS** (2313 rows) :contentReference[oaicite:4]{index=4}
-- `hw1_test.csv`: contains **ID** and **UTTERANCES** (982 rows) :contentReference[oaicite:5]{index=5}
+The dataset consists of two CSV files:
 
-There are **19 unique relations** in this dataset (including `none`). :contentReference[oaicite:6]{index=6}
+- **Training data**: utterance IDs, utterances, and labeled relations
+- **Test data**: utterance IDs and utterances only
 
-### Relations (high level)
-Relations include items like:
-- `movie.initial_release_date`, `movie.directed_by`, `movie.genre`, `movie.starring.actor`, `movie.starring.character`
-- plus `none` and `person.date_of_birth`, etc. :contentReference[oaicite:7]{index=7}
+There are **19 unique relations** in total, including a `none` label for utterances that do not map to any defined relation.
+
+The dataset focuses on the **film domain**, using relations inspired by Freebase-style schemas.
 
 ---
 
 ## Task Framing
-This is supervised learning: inputs are utterances, outputs are relation labels. :contentReference[oaicite:8]{index=8}
 
-### Multi-label vs multi-class
-Some utterances may require multiple relations (example: a query involving actor + gender). Therefore the task is treated as **multi-label classification** rather than strictly multi-class. :contentReference[oaicite:9]{index=9}
+### Multi-label Classification
+Some utterances can reference **multiple relations** at once. For example, a question may ask about both an actor and a movie attribute.
 
-**Practical implication**: the model should be able to output:
-- zero relations (e.g., `none`)
-- one relation
-- multiple relations
+Because of this, the problem is framed as **multi-label classification**, not simple multi-class classification.
+
+Implications:
+- Each utterance can have zero, one, or multiple labels
+- The model outputs a score per relation
+- Labels are predicted independently using sigmoid-style outputs
 
 ---
 
 ## Model
-The model is an **MLP (Multilayer Perceptron)** with:
-- input layer (vectorized text features)
-- hidden layer 1: **512** units
-- hidden layer 2: **256** units
-- dropout: **0.3**
-- activation: **ReLU** by default, with experiments using **Leaky ReLU** :contentReference[oaicite:10]{index=10} :contentReference[oaicite:11]{index=11}
+The core model is a **Multilayer Perceptron (MLP)** implemented in PyTorch.
 
-Why MLP here:
-- When using sparse bag-of-words style features, an MLP is a reasonable baseline that can learn non-linear decision boundaries while remaining relatively simple.
+Architecture:
+- Input layer: vectorized text features
+- Hidden layer 1: 512 units
+- Hidden layer 2: 256 units
+- Dropout: 0.3
+- Activation: ReLU or Leaky ReLU (experimented)
+
+Why an MLP:
+- Works well with sparse bag-of-words style features
+- Can model non-linear decision boundaries
+- Simple enough to reason about and debug
 
 ---
 
 ## Text Representation
-Text is vectorized using **CountVectorizer** (word-level tokenization by default). :contentReference[oaicite:12]{index=12}
+Text is vectorized using **CountVectorizer**.
 
-Key vectorizer settings discussed:
-- `stop_words='english'` to remove common words
-- `max_features=3000` to limit vocabulary size and reduce noise :contentReference[oaicite:13]{index=13}
+Key configuration options explored:
+- Word-level tokenization
+- Character-level tokenization using `char_wb`
+- Stopword removal
+- Vocabulary size limits
 
-A major experiment later switches the analyzer to:
-- `char_wb` (character-level tokenization), which produced the largest improvement. :contentReference[oaicite:14]{index=14}
-
-**Why char-level helps (intuition):**
-- Smaller, denser feature space
-- Better robustness to spelling variations / morphology
-- Particularly helpful on smaller datasets :contentReference[oaicite:15]{index=15}
+### Character-level tokenization
+The largest performance gains came from switching to **character-level features**:
+- More robust to spelling variation
+- Smaller and denser feature space
+- Better generalization on smaller datasets
 
 ---
 
 ## Training Setup
-### Split
-Training data is split:
-- 80% train / 20% test :contentReference[oaicite:16]{index=16}
 
-### Loss
-Default loss: **BCEWithLogitsLoss**, appropriate for multi-label classification. :contentReference[oaicite:17]{index=17}
+### Data Split
+The training data is split into:
+- 80% training
+- 20% validation/testing
 
-Ablation: **CrossEntropyLoss** is tested and found to perform poorly for this multi-label framing. The report explicitly notes CrossEntropy is more appropriate for multi-class (softmax) while BCEWithLogitsLoss is better for multi-label (sigmoid). :contentReference[oaicite:18]{index=18}
+### Loss Function
+The primary loss function is **BCEWithLogitsLoss**, which is appropriate for multi-label classification.
+
+CrossEntropyLoss was also tested but performed poorly, as it assumes mutually exclusive classes.
 
 ### Optimizers
 Optimizers explored:
-- Adam (default)
+- Adam
 - AdamW
 - NAdam
-- Adagrad :contentReference[oaicite:19]{index=19}
+- Adagrad
 
-### Hyperparameters explored
-- learning rate: 0.01 vs 0.001 :contentReference[oaicite:20]{index=20}
-- epochs: 100 vs 1000 :contentReference[oaicite:21]{index=21}
-- activation: ReLU vs Leaky ReLU :contentReference[oaicite:22]{index=22}
-- vectorizer analyzer: word vs char_wb :contentReference[oaicite:23]{index=23}
+AdamW generally produced the most stable results.
 
-### Evaluation
-The report focuses on:
-- accuracy over epochs
-- loss over epochs
-- overall prediction accuracy :contentReference[oaicite:24]{index=24}
+### Hyperparameters
+Experiments varied:
+- Learning rate (0.01 vs 0.001)
+- Number of epochs (100 vs 1000)
+- Activation function (ReLU vs Leaky ReLU)
+- Tokenization strategy (word vs character)
 
 ---
 
 ## Experiments
-Experiments are structured by changing one or more hyperparameters:
-- Lower learning rate improved stability vs high learning rate (less oscillation in accuracy/loss). :contentReference[oaicite:25]{index=25}
-- CrossEntropy performed poorly compared to BCEWithLogitsLoss in this multi-label setup. :contentReference[oaicite:26]{index=26} :contentReference[oaicite:27]{index=27}
-- Switching CountVectorizer to `char_wb` showed the biggest jump in accuracy. :contentReference[oaicite:28]{index=28}
+Experiments were run by changing one component at a time to isolate its effect.
+
+Key observations:
+- Lower learning rates significantly reduced training instability
+- Increasing epochs beyond a certain point led to oscillation and potential overfitting
+- Character-level tokenization provided the single largest accuracy improvement
+- Loss function choice mattered greatly due to the multi-label setup
 
 ---
 
 ## Results Summary
-Best-performing configuration reported:
-- optimizer: **AdamW**
-- epochs: **100**
-- learning rate: **0.001**
-- loss: **BCEWithLogitsLoss**
-- activation: **Leaky ReLU**
-- analyzer: **char_wb**
-- prediction accuracy: **73.4%** :contentReference[oaicite:29]{index=29}
+The best-performing configuration achieved approximately **73% prediction accuracy** on the validation set.
 
-The report notes:
-- Increasing epochs to 1000 sometimes reduced prediction accuracy (possible overfitting), and graphs showed more oscillation. :contentReference[oaicite:30]{index=30} :contentReference[oaicite:31]{index=31}
-
-A summary table of configurations and accuracies is included in the appendix. :contentReference[oaicite:32]{index=32}
+Best configuration highlights:
+- AdamW optimizer
+- Learning rate: 0.001
+- 100 training epochs
+- BCEWithLogitsLoss
+- Leaky ReLU activation
+- Character-level tokenization
 
 ---
 
 ## Key Takeaways
-1. **Low learning rate matters** (reduced oscillation, improved training dynamics). :contentReference[oaicite:33]{index=33}  
-2. **BCEWithLogitsLoss fits multi-label** better than CrossEntropy in this formulation. :contentReference[oaicite:34]{index=34}  
-3. **Character-level tokenization (`char_wb`) was the strongest lever** for performance improvement on this dataset. :contentReference[oaicite:35]{index=35}  
-4. More epochs is not always better; it can introduce oscillation and possible overfitting. :contentReference[oaicite:36]{index=36}  
+1. **Problem framing matters**: multi-label vs multi-class changes everything.
+2. **Loss function choice is critical** for multi-label classification.
+3. **Character-level features** can outperform word-level features on small datasets.
+4. More training epochs does not always improve performance.
+5. Simple models with good features can be very competitive.
 
 ---
 
 ## Common Pitfalls / Notes to Future Me
-- If framing as multi-label, ensure:
-  - sigmoid-style outputs (or logits + BCEWithLogitsLoss)
-  - thresholding strategy at inference time (how logits become labels)
-- If accuracy plateaus:
-  - check learning rate first (0.001 was much more stable than 0.01)
-- Tokenization choice can dominate everything:
-  - word-level can miss signals if vocabulary is sparse or text varies
-  - char-level can generalize better in small-data settings
+- Always confirm whether the task is multi-label or multi-class before choosing a loss.
+- If training is unstable, check learning rate first.
+- Tokenization strategy can dominate performance.
+- Accuracy alone is insufficient; per-label metrics matter.
+- Thresholding logits into labels is a non-trivial decision.
 
 ---
 
 ## How to Reproduce
-1. Place `hw1_train.csv` and `hw1_test.csv` in the project directory.
-2. Run training using the MLP setup described:
-   - Vectorize text (CountVectorizer, try both `word` and `char_wb`)
-   - Train MLP with BCEWithLogitsLoss
-3. Generate predictions for `hw1_test.csv` and submit (if the assignment uses Kaggle submissions).
+1. Place the training and test CSV files in the project directory.
+2. Vectorize utterances using CountVectorizer (try both word and character analyzers).
+3. Train the MLP using BCEWithLogitsLoss.
+4. Evaluate on the held-out validation set.
+5. Generate predictions for the test set if required.
 
 ---
 
 ## Next Improvements
-If revisiting, here are high-impact additions:
-- **Better evaluation for multi-label**:
-  - per-label precision/recall/F1
-  - micro/macro averages
-- **Threshold tuning**:
-  - choose thresholds per label (not necessarily 0.5)
-- **Try TF-IDF** instead of raw counts
-- **Try a linear baseline** (LogReg / linear SVM) with char n-grams as a sanity check
-- **Use validation set / cross-validation** for more reliable comparisons
-- **Regularization sweeps**:
-  - dropout rate
-  - weight decay (esp. with AdamW)
+If revisiting this project:
+- Add per-label precision, recall, and F1 metrics
+- Tune decision thresholds per relation
+- Try TF-IDF instead of raw counts
+- Compare against linear baselines (Logistic Regression, linear SVM)
+- Add cross-validation for more reliable comparisons
+- Explore regularization (dropout rates, weight decay)
 
 ---
+
+## Final Note
+This project is intentionally simple in architecture but rich in learning value. The emphasis is on correct problem framing, disciplined experimentation, and understanding why design choices matter.
