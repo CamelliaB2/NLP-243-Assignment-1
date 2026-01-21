@@ -1,190 +1,217 @@
-# Relation Extraction / Utterance Classification (PyTorch MLP)
+# Relation Extraction from Natural Language (PyTorch)
 
-This project implements a supervised NLP model to classify natural-language **utterances** into one or more **semantic relations** from a movie-focused schema. The task is framed as **multi-label classification**, since a single utterance may invoke multiple relations.
+This project explores **relation extraction** as a supervised NLP task using deep learning in PyTorch. The goal is to classify which **semantic relations** are invoked by a natural-language utterance about films or people, based on a predefined schema derived from Freebase.
 
-This project was built as a learning exercise to understand text vectorization, multi-label learning, neural baselines, and systematic experimentation.
+This repository serves as both an implementation and an experiment log, documenting how architectural and hyperparameter choices affect performance.
 
 ---
 
 ## Table of Contents
-- Project Goal
-- Dataset
-- Task Framing
-- Model
-- Text Representation
-- Training Setup
-- Experiments
-- Results Summary
-- Key Takeaways
-- Common Pitfalls / Notes to Future Me
-- How to Reproduce
-- Next Improvements
+1. [Problem Overview](#problem-overview)
+2. [Dataset Description](#dataset-description)
+3. [Task Formulation](#task-formulation)
+4. [Model Architecture](#model-architecture)
+5. [Feature Representation](#feature-representation)
+6. [Training Setup](#training-setup)
+7. [Experiments and Findings](#experiments-and-findings)
+8. [Key Lessons Learned](#key-lessons-learned)
+9. [Limitations](#limitations)
+10. [Possible Improvements](#possible-improvements)
+11. [References](#references)
 
 ---
 
-## Project Goal
-Given a user utterance (e.g., a question about a movie), predict the correct relation(s) it refers to.  
-Examples include relations like:
-- movie release date
-- movie director
-- movie genre
-- actors or characters in a movie
+## Problem Overview
 
-The core objective is to map free-form text to structured semantic relations.
+The task is **relation extraction** from short natural-language queries. Given an utterance (e.g., a question about a movie), the model must predict which **relation(s)** are being requested.
 
----
+Example:
+- Utterance: *"Who directed Inception?"*
+- Target relation: `movie.directed_by`
 
-## Dataset
-The dataset consists of two CSV files:
-
-- **Training data**: utterance IDs, utterances, and labeled relations
-- **Test data**: utterance IDs and utterances only
-
-There are **19 unique relations** in total, including a `none` label for utterances that do not map to any defined relation.
-
-The dataset focuses on the **film domain**, using relations inspired by Freebase-style schemas.
+This is a **supervised learning** problem where:
+- Input: text utterance
+- Output: one or more relations
 
 ---
 
-## Task Framing
+## Dataset Description
 
-### Multi-label Classification
-Some utterances can reference **multiple relations** at once. For example, a question may ask about both an actor and a movie attribute.
+The dataset is derived from the **Freebase film schema** and contains movie- and person-related queries.
 
-Because of this, the problem is framed as **multi-label classification**, not simple multi-class classification.
+### Training Set
+- 2,313 utterances
+- Columns:
+  - `ID`
+  - `UTTERANCE`
+  - `CORE_RELATIONS`
 
-Implications:
-- Each utterance can have zero, one, or multiple labels
-- The model outputs a score per relation
-- Labels are predicted independently using sigmoid-style outputs
+### Test Set
+- 982 utterances
+- Columns:
+  - `ID`
+  - `UTTERANCE`
+
+### Relations
+There are **19 unique relations**, including:
+- `movie.initial_release_date`
+- `movie.starring.actor`
+- `movie.directed_by`
+- `movie.genre`
+- `actor.gender`
+- `person.date_of_birth`
+- `none`
+
+These relations define the output space for the model.
 
 ---
 
-## Model
-The core model is a **Multilayer Perceptron (MLP)** implemented in PyTorch.
+## Task Formulation
 
-Architecture:
-- Input layer: vectorized text features
-- Hidden layer 1: 512 units
-- Hidden layer 2: 256 units
+This is a **multi-label classification** problem:
+- An utterance can invoke **zero, one, or multiple relations**
+- Example: asking for a *female actor* invokes both a starring relation and a gender relation
+
+Because of this:
+- Softmax-based losses are inappropriate
+- Sigmoid-based losses are required
+
+---
+
+## Model Architecture
+
+The model is a **Multilayer Perceptron (MLP)** with the following structure:
+
+- Input layer (vectorized text)
+- Hidden layer: 512 units
+- Hidden layer: 256 units
 - Dropout: 0.3
-- Activation: ReLU or Leaky ReLU (experimented)
+- Output layer: one neuron per relation
+- Activation: ReLU or Leaky ReLU (varied by experiment)
 
-Why an MLP:
-- Works well with sparse bag-of-words style features
-- Can model non-linear decision boundaries
-- Simple enough to reason about and debug
+This architecture was chosen for:
+- Simplicity
+- Interpretability
+- Controlled experimentation
 
 ---
 
-## Text Representation
-Text is vectorized using **CountVectorizer**.
+## Feature Representation
 
-Key configuration options explored:
-- Word-level tokenization
-- Character-level tokenization using `char_wb`
-- Stopword removal
-- Vocabulary size limits
+Text is vectorized using **CountVectorizer**, with experiments across:
 
-### Character-level tokenization
-The largest performance gains came from switching to **character-level features**:
-- More robust to spelling variation
-- Smaller and denser feature space
-- Better generalization on smaller datasets
+### Word-level tokenization
+- Captures semantic meaning
+- Large vocabulary
+- More sparse features
+
+### Character-level tokenization (`char_wb`)
+- Captures subword patterns
+- Smaller, more robust vocabulary
+- Particularly effective for short utterances
+
+Stopwords were removed and vocabulary size was capped to reduce noise.
 
 ---
 
 ## Training Setup
 
-### Data Split
-The training data is split into:
+- Optimizers tested:
+  - Adam
+  - AdamW
+  - NAdam
+  - Adagrad
+- Loss functions:
+  - **BCEWithLogitsLoss** (primary)
+  - CrossEntropyLoss (tested, but unsuitable)
+- Learning rates:
+  - 0.01
+  - 0.001
+- Epochs:
+  - 100
+  - 1000
+
+Train/test split:
 - 80% training
-- 20% validation/testing
-
-### Loss Function
-The primary loss function is **BCEWithLogitsLoss**, which is appropriate for multi-label classification.
-
-CrossEntropyLoss was also tested but performed poorly, as it assumes mutually exclusive classes.
-
-### Optimizers
-Optimizers explored:
-- Adam
-- AdamW
-- NAdam
-- Adagrad
-
-AdamW generally produced the most stable results.
-
-### Hyperparameters
-Experiments varied:
-- Learning rate (0.01 vs 0.001)
-- Number of epochs (100 vs 1000)
-- Activation function (ReLU vs Leaky ReLU)
-- Tokenization strategy (word vs character)
+- 20% testing
 
 ---
 
-## Experiments
-Experiments were run by changing one component at a time to isolate its effect.
+## Experiments and Findings
 
-Key observations:
-- Lower learning rates significantly reduced training instability
-- Increasing epochs beyond a certain point led to oscillation and potential overfitting
-- Character-level tokenization provided the single largest accuracy improvement
-- Loss function choice mattered greatly due to the multi-label setup
+### Most Important Observations
 
----
+1. **Loss function choice matters**
+   - BCEWithLogitsLoss consistently outperformed CrossEntropy
+   - This aligns with the multi-label nature of the task
 
-## Results Summary
-The best-performing configuration achieved approximately **73% prediction accuracy** on the validation set.
+2. **Learning rate dominates optimizer choice**
+   - High learning rates caused oscillation
+   - Low learning rates stabilized both accuracy and loss
 
-Best configuration highlights:
-- AdamW optimizer
+3. **Optimizer choice had minimal impact**
+   - Adam, AdamW, and NAdam produced similar results when learning rate was controlled
+
+4. **Character-level tokenization was the biggest win**
+   - `char_wb` analyzer produced the highest accuracy
+   - Particularly effective for short, structured queries
+
+5. **More epochs ≠ better**
+   - Increasing to 1000 epochs often led to oscillation or mild overfitting
+   - 100 epochs was generally sufficient
+
+### Best Configuration
+- Optimizer: AdamW
 - Learning rate: 0.001
-- 100 training epochs
-- BCEWithLogitsLoss
-- Leaky ReLU activation
-- Character-level tokenization
+- Loss: BCEWithLogitsLoss
+- Activation: Leaky ReLU
+- Tokenization: char-level (`char_wb`)
+- Epochs: 100
+
+This achieved **~73.4% accuracy**, a large improvement over the baseline (~58%).
 
 ---
 
-## Key Takeaways
-1. **Problem framing matters**: multi-label vs multi-class changes everything.
-2. **Loss function choice is critical** for multi-label classification.
-3. **Character-level features** can outperform word-level features on small datasets.
-4. More training epochs does not always improve performance.
-5. Simple models with good features can be very competitive.
+## Key Lessons Learned
+
+- Model correctness depends on **problem formulation** (multi-label vs multi-class)
+- Loss functions must match output semantics
+- Feature representation can matter more than architecture
+- Character-level models are often underappreciated for short-text NLP
+- Stability (learning rate, loss) matters more than optimizer novelty
 
 ---
 
-## Common Pitfalls / Notes to Future Me
-- Always confirm whether the task is multi-label or multi-class before choosing a loss.
-- If training is unstable, check learning rate first.
-- Tokenization strategy can dominate performance.
-- Accuracy alone is insufficient; per-label metrics matter.
-- Thresholding logits into labels is a non-trivial decision.
+## Limitations
+
+- No contextual embeddings (e.g., BERT)
+- Simple MLP architecture
+- No explicit handling of label correlations
+- Accuracy used as primary metric (could be expanded to precision/recall per relation)
 
 ---
 
-## How to Reproduce
-1. Place the training and test CSV files in the project directory.
-2. Vectorize utterances using CountVectorizer (try both word and character analyzers).
-3. Train the MLP using BCEWithLogitsLoss.
-4. Evaluate on the held-out validation set.
-5. Generate predictions for the test set if required.
+## Possible Improvements
 
----
-
-## Next Improvements
 If revisiting this project:
-- Add per-label precision, recall, and F1 metrics
-- Tune decision thresholds per relation
-- Try TF-IDF instead of raw counts
-- Compare against linear baselines (Logistic Regression, linear SVM)
-- Add cross-validation for more reliable comparisons
-- Explore regularization (dropout rates, weight decay)
+1. Use pretrained embeddings or transformers
+2. Add per-relation precision/recall analysis
+3. Model label dependencies explicitly
+4. Apply threshold tuning per relation
+5. Introduce cross-validation for more stable estimates
 
 ---
 
-## Final Note
-This project is intentionally simple in architecture but rich in learning value. The emphasis is on correct problem framing, disciplined experimentation, and understanding why design choices matter.
+## References
+
+- Dive into Deep Learning (Zhang et al.)
+- PyTorch BCEWithLogitsLoss documentation
+- Freebase schema
+- Character vs Word Tokenization literature
+
+---
+
+## Notes to Future Me
+
+This project is about **learning dynamics**, not squeezing out maximum accuracy.  
+The most valuable insight was how *representation + loss + learning rate* dominated outcomes far more than architecture tweaks.
